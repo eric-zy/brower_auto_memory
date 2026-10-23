@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>视频上传 fixture</title>
+<label>单集视频 <input type="file" accept="video/mp4" onchange="showUpload(this)"></label>
+<div id="result"></div>
+<button onclick="window.didSubmit=true">提交审核</button>
+<script>
+window.didSubmit=false;
+function showUpload(input){
+ const row=document.createElement('div');row.className='upload-item';row.textContent=input.files[0].name+' 100% 上传完成';
+ const img=document.createElement('img');img.width=30;img.height=30;
+ img.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aR1cAAAAASUVORK5CYII=';
+ row.appendChild(img);document.getElementById('result').appendChild(row);
+}
+</script>

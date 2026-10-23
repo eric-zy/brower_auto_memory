@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>只读查重 fixture</title>
+<label>短剧标题 <input id="query" placeholder="请输入内容，回车键确认"></label>
+<button onclick="search()">搜索</button>
+<table><tbody></tbody></table>
+<script>
+function search(){
+ const tr=document.createElement('tr'),title=document.createElement('td'),links=document.createElement('td');
+ title.textContent=document.querySelector('input').value+'\n短剧ID：LOCAL1';
+ const a=document.createElement('a');a.href='?miniSeriesId=LOCAL1';a.textContent='查看';links.appendChild(a);
+ tr.append(title,links);document.querySelector('tbody').replaceChildren(tr);
+}
+</script>

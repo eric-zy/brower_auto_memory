@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Local Upload Adapter Fixture</title>
+<style>label{display:block;margin:6px}img{width:30px;height:30px}</style>
+<main class="home__main">
+<label>剧名 <input id="title"></label>
+<label>作品简介 <textarea id="synopsis"></textarea></label>
+<label>集数标题 <input id="episode"></label>
+<label>备案号 <input id="filing"></label>
+<label>版权类型 <select id="proof-type"><option>请选择</option><option>权属声明</option></select></label>
+<label>版权开始日期 <input type="date" id="from"></label>
+<label>版权结束日期 <input type="date" id="until"></label>
+<div>允许转授权 <label>是 <input type="radio" name="sublicense" value="1"></label><label>否 <input type="radio" name="sublicense" value="0"></label></div>
+<label>售卖方式 <select id="selling"><option>请选择</option><option>免费</option></select></label>
+<div>单集付费 <label>付费 <input type="radio" name="paid" value="付费"></label><label>免费 <input type="radio" name="paid" value="免费"></label></div>
+<label>视频 <input type="file" accept="video/mp4" id="video"></label>
+<label>版权证明 <input type="file" accept="image/png" id="proof"></label>
+<label>封面 <input type="file" accept="image/png" id="cover"></label>
+<label>分类 <input id="category" readonly onclick="document.getElementById('options').hidden=false"></label>
+<ul id="options" hidden><li role="option" onclick="document.getElementById('category').value=this.innerText;this.parentElement.hidden=true">爱情</li></ul>
+<button onclick="window.didSubmit=true">提交审核</button>
+<p id="progress"></p>
+</main>
+<script>window.didSubmit=false;window.inputEvents=0;document.getElementById('title').addEventListener('input',()=>window.inputEvents++);</script>
+<script>
+if(new URLSearchParams(location.search).has('autoflow')){
+ document.querySelector('#video').parentElement.hidden=true;
+ const next=document.createElement('button');next.textContent='下一步';
+ next.onclick=()=>location.href='upload_stage.html?miniSeriesId=LOCAL1&step=1';
+ document.querySelector('main').appendChild(next);
+}
+</script>

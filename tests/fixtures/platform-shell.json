@@ -1,0 +1,10 @@
+{
+  "url": "https://kdj.kuaishou.com/home/content/content-management",
+  "text": "经营者管理平台\n测试账号\n数据\n内容\n付费短剧\n营销\n分销\n财务",
+  "controls": [
+    {"ref":"k1","tag":"span","type":"button","text":"测试账号","label":"测试账号","disabled":false},
+    {"ref":"k2","tag":"li","type":"menuitem","text":"数据","label":"数据","disabled":false},
+    {"ref":"k4","tag":"li","type":"menuitem","text":"付费短剧","label":"付费短剧","disabled":false}
+  ],
+  "rows": [], "dialogs": [], "uploadRows": []
+}

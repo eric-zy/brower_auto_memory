@@ -1,0 +1,21 @@
+{
+  "testMode": false,
+  "seriesTitle": "",
+  "synopsis": "",
+  "sellingMode": "free",
+  "episodePrice": 0,
+  "coverFile": "",
+  "copyright": {
+    "proofType": "",
+    "proofFile": "",
+    "authorizedForUpload": null,
+    "validFrom": null,
+    "validUntil": null,
+    "allowSublicense": false
+  },
+  "filing": {
+    "hasNumber": true,
+    "number": ""
+  },
+  "platformFields": {}
+}

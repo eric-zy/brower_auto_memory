@@ -1,0 +1,265 @@
+{
+  "$defs": {
+    "Copyright": {
+      "additionalProperties": false,
+      "properties": {
+        "proofType": {
+          "minLength": 1,
+          "title": "Prooftype",
+          "type": "string"
+        },
+        "proofFile": {
+          "minLength": 1,
+          "title": "Prooffile",
+          "type": "string"
+        },
+        "authorizedForUpload": {
+          "title": "Authorizedforupload",
+          "type": "boolean"
+        },
+        "validFrom": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validfrom"
+        },
+        "validUntil": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validuntil"
+        },
+        "allowSublicense": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Allowsublicense"
+        }
+      },
+      "required": [
+        "proofType",
+        "proofFile",
+        "authorizedForUpload"
+      ],
+      "title": "Copyright",
+      "type": "object"
+    },
+    "Episode": {
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "minimum": 1,
+          "title": "Number",
+          "type": "integer"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "sourceFile": {
+          "minLength": 1,
+          "title": "Sourcefile",
+          "type": "string"
+        },
+        "paid": {
+          "default": false,
+          "title": "Paid",
+          "type": "boolean"
+        },
+        "price": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Price",
+          "type": "number"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "sourceFile"
+      ],
+      "title": "Episode",
+      "type": "object"
+    },
+    "Filing": {
+      "additionalProperties": false,
+      "properties": {
+        "hasNumber": {
+          "title": "Hasnumber",
+          "type": "boolean"
+        },
+        "number": {
+          "pattern": "^V[0-9]{14}$",
+          "title": "Number",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hasNumber",
+        "number"
+      ],
+      "title": "Filing",
+      "type": "object"
+    },
+    "MediaInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "durationSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Durationseconds",
+          "type": "number"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "durationSeconds",
+        "sha256"
+      ],
+      "title": "MediaInfo",
+      "type": "object"
+    },
+    "PlatformHistory": {
+      "additionalProperties": false,
+      "properties": {
+        "contentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contentid"
+        },
+        "uploadedEpisodes": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Uploadedepisodes",
+          "type": "array"
+        }
+      },
+      "title": "PlatformHistory",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "seriesTitle": {
+      "minLength": 1,
+      "title": "Seriestitle",
+      "type": "string"
+    },
+    "synopsis": {
+      "minLength": 1,
+      "title": "Synopsis",
+      "type": "string"
+    },
+    "episodes": {
+      "items": {
+        "$ref": "#/$defs/Episode"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Episodes",
+      "type": "array"
+    },
+    "mediaInfo": {
+      "$ref": "#/$defs/MediaInfo"
+    },
+    "copyright": {
+      "$ref": "#/$defs/Copyright"
+    },
+    "filing": {
+      "$ref": "#/$defs/Filing"
+    },
+    "coverFile": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Coverfile"
+    },
+    "sellingMode": {
+      "anyOf": [
+        {
+          "enum": [
+            "free",
+            "paid"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sellingmode"
+    },
+    "platformFields": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Platformfields",
+      "type": "object"
+    },
+    "platformHistory": {
+      "$ref": "#/$defs/PlatformHistory"
+    },
+    "testMode": {
+      "default": false,
+      "title": "Testmode",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "seriesTitle",
+    "synopsis",
+    "episodes",
+    "mediaInfo",
+    "copyright",
+    "filing"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}
