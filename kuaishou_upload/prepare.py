@@ -70,6 +70,11 @@ def file_number(video):
     return int(match.group(1)) if match else None
 
 
+def generated_synopsis(value, title, number):
+    """Recognize only our exact legacy/debug placeholders, never real prose."""
+    return isinstance(value, str) and value.strip() in {f'《{title}》第{number}集。', f'《{title}》。'}
+
+
 class ManifestBuilder:
     """视频自动提取 + 可选旧资料 + 一份公共固定配置，产物全部在项目状态目录。"""
 

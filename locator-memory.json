@@ -1,0 +1,18 @@
+{
+  "kdj.kuaishou.com/home/content/content-management:open_list": {
+    "tag": "li",
+    "type": "menuitem",
+    "accessibleName": "",
+    "text": "付费短剧",
+    "label": "",
+    "region": ""
+  },
+  "kdj.kuaishou.com/home/content/content-management:open_upload": {
+    "tag": "div",
+    "type": "button",
+    "accessibleName": "",
+    "text": "内容上传",
+    "label": "",
+    "region": ""
+  }
+}

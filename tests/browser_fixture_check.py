@@ -6,6 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,6 +18,7 @@ from kuaishou_upload.config import Settings
 from kuaishou_upload.database import UploadDatabase
 from kuaishou_upload.scan import scan_directory
 from kuaishou_upload.tools import UploadTask
+from kuaishou_upload.page_state import classify_page
 
 
 async def check(root):
@@ -38,6 +40,7 @@ async def check(root):
         assert (await adapter.page.get_url()).endswith("upload_form.html")
         assert await adapter.page.evaluate("() => sessionStorage.getItem('tourDismissed')") == "1"
         async def node(selector):
+            await adapter.page.evaluate('(selector) => document.querySelector(selector).scrollIntoView({block:"center"})', selector)
             await snap()
             ref = await adapter.page.evaluate("(s) => document.querySelector(s).dataset.ksUploadRef", selector)
             return next(n for n in (await snap())["controls"] if n["ref"] == ref)
@@ -85,12 +88,27 @@ async def check(root):
             pass
         assert await adapter.page.evaluate("() => window.didSubmit") in {"false", "False"}
         before_lookup = dict(adapter.filled)
-        async def lookup_page(_url):
-            return await browser.new_page((Path(__file__).parent / "fixtures" / "lookup.html").as_uri())
-        adapter.browser = SimpleNamespace(new_page=lookup_page, close_page=browser.close_page,
+        await adapter.page.goto((Path(__file__).parent / "fixtures" / "lookup.html").as_uri())
+        lookup_page = adapter.page
+        list_url = 'https://kdj.kuaishou.com/home/content/content-management'
+        # This fixture executes a local file. Substitute its URL in both reads
+        # so the production URL-consistency check is still exercised.
+        adapter.page = SimpleNamespace(_target_id=lookup_page._target_id,
+            get_url=AsyncMock(return_value=list_url), evaluate=lookup_page.evaluate,
+            get_elements_by_css_selector=lookup_page.get_elements_by_css_selector)
+        async def lookup_snapshot():
+            result = await snap()
+            # Only this isolated file fixture substitutes the authorized list URL.
+            result['url'] = list_url
+            return result
+        adapter.snapshot = lookup_snapshot
+        adapter.browser = SimpleNamespace(new_page=AsyncMock(side_effect=AssertionError('查重不能新建标签页')), close_page=browser.close_page,
                                           get_or_create_cdp_session=browser.get_or_create_cdp_session)
         assert await adapter.lookup_series() == "LOCAL1"
-        assert adapter.filled == before_lookup, "查重不能污染上传表单字段绑定"
+        assert adapter.filled == before_lookup, "查重不能将搜索框当作已填写的表单字段"
+        adapter.browser.new_page.assert_not_awaited()
+        adapter.page = lookup_page
+        adapter.snapshot = snap
 
         # 自动路径：无模型参与，填表、选证明/封面、下一步、选视频、核对后停止于 test_prepared。
         materials = root / "auto-assets"
@@ -104,6 +122,7 @@ async def check(root):
             task = UploadTask(auto_job, sha, settings, database, {}, browser=auto_browser)
             async def local_snapshot():
                 state = json.loads(await auto_browser.page.evaluate(SNAPSHOT))
+                state['pageState'] = classify_page(state).name
                 cid = content_id(state["url"])
                 if cid and auto_browser.form_verified:
                     await task.checkpoint(contentId=cid, formVerified=True, cardCount=1, draftUrl=state["url"])
@@ -113,6 +132,13 @@ async def check(root):
                 assert auto_browser.video_complete(await local_snapshot(), auto_job.files["video"].name)
             auto_browser.snapshot = local_snapshot  # 仅本地 fixture 的 file:// 页面。
             auto_browser.verify_prepared = local_verify
+            native_act = auto_browser.act
+            async def visible_fixture_act(decision, phase, current):
+                if decision.ref and decision.action in {'click', 'choose'}:
+                    await auto_browser.page.evaluate('(ref) => document.querySelector(`[data-ks-upload-ref="${ref}"]`).scrollIntoView({block:"center"})', decision.ref)
+                    current = await local_snapshot()
+                return await native_act(decision, phase, current)
+            auto_browser.act = visible_fixture_act
             task.checked = task.bootstrapped = True
             await auto_browser.wait_page()
             await task.auto_prepare()
@@ -124,7 +150,7 @@ async def check(root):
         finally:
             database.close()
         print("PASS：自动关闭引导、点击内容上传、按标签自动填表、日期/单选/下拉回读、附件白名单及提交限制")
-        print("PASS：独立页查重不污染表单，自动准备全流程无需模型，结束于 test_prepared")
+        print("PASS：同页查重不新建标签页，自动准备全流程无需模型，结束于 test_prepared")
     finally:
         await browser.kill()
 

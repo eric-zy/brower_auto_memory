@@ -33,6 +33,7 @@ class KuaishouUploadTask:
         self.checked = False
         self.last_poll = 0.0
         self.requires_user = False
+        self.current_error_code = ''
         self.failed = False
         self.bootstrapped = False
         self.existing_series = False
@@ -116,11 +117,10 @@ class KuaishouUploadTask:
             return
         cid = self.record["content_id"]
         if not cid:
-            await self.set_stage("打开内容上传")
-            await self.browser.open_upload_entry()
             await self.set_stage("平台查重")
             cid = await self.browser.lookup_series()
         if cid:
+            await self.set_stage("核对已有作品")
             self.database.update(self.sha256, content_id=cid)
             await self.browser.open_detail(cid)
             await self.inspect_platform(InspectParams(job_id=self.job_id))
@@ -138,8 +138,8 @@ class KuaishouUploadTask:
                         raise ValueError("已有作品查重通过，但无法唯一定位新增集数入口")
                     await self.click_control(snap, button, 'add_episode')
         else:
-            if self.job.manifest.episodes[0].number != 1:
-                raise ValueError("平台未找到已有作品，不能从非第1集新建")
+            await self.set_stage("打开内容上传")
+            await self.browser.open_upload_entry()
             self.checked = True
             self.database.update(self.sha256, message="平台已明确无同名作品，进入上传表单")
         self.bootstrapped = True
@@ -289,6 +289,8 @@ class KuaishouUploadTask:
             await self.browser.act(command, phase, snap)
         snap = await self.browser.snapshot()
         cid = content_id(snap["url"])
+        if cid and action in {'read', 'confirm_target'} and hasattr(self.browser, 'episode_inventory'):
+            snap = await self.browser.episode_inventory(snap)
         if cid:
             title = self.job.manifest.seriesTitle
             if title not in snap["text"] and not any(n["value"] == title for n in snap["controls"]):
@@ -303,7 +305,7 @@ class KuaishouUploadTask:
             if self.reconcile_only:
                 raise ValueError("尚未确认上次提交结果，禁止重新提交")
             if cid:
-                if re.search(r"审核中|已完结", snap["text"]):
+                if re.search(r"审核中|已完结|是否完结\s*[：:]?\s*是", snap["text"]):
                     raise ValueError("目标剧审核中或已完结，停止加集")
                 ep = self.job.manifest.episodes[0]
                 numbers = []
@@ -315,7 +317,7 @@ class KuaishouUploadTask:
                         if int(number.group(1)) == ep.number and re.search(r"未上传|待上传|草稿", row["text"]):
                             available_slot = True
                 total = re.search(r"(?:共|已上传|上传集数[：:]?)\s*(\d+)\s*(?:条|集)", snap["text"])
-                full_list = bool(total and int(total.group(1)) == len(set(numbers)))
+                full_list = bool(snap.get('episodeInventoryComplete') or (total and int(total.group(1)) == len(set(numbers))))
                 if not available_slot and not (full_list and ep.number not in numbers) and not re.search(r"暂无数据|暂无集数", snap["text"]):
                     raise ValueError("无法确认目标集数尚未上传，请核对完整集数列表")
                 self.database.remember_series(self.record["series_key"], cid)
@@ -325,8 +327,6 @@ class KuaishouUploadTask:
                 searched = any(n["value"] == self.job.manifest.seriesTitle for n in snap["controls"])
                 if not searched or not re.search(r"暂无数据|暂无内容|无搜索结果|没有找到", snap["text"]):
                     raise ValueError("缺少剧名搜索后无匹配结果的明确证据")
-                if self.job.manifest.episodes[0].number != 1:
-                    raise ValueError("未找到已有剧，不能直接从非第1集新建")
             self.checked = True
             self.database.update(self.sha256, message="平台查重通过")
         if self.bootstrapped and self.checked and not self.reconcile_only:
@@ -433,20 +433,21 @@ class KuaishouUploadTask:
 
     async def fail(self, exc):
         self.failed = True
+        self.current_error_code = getattr(exc, 'code', '')
         message = str(exc)
         if self.trace:
             self.trace.error(exc)
             try:
                 from ..state import atomic_json
-                snap = await self.browser.snapshot()
+                snap = getattr(self.browser, 'failure_snapshot', None)
+                if snap is None:
+                    snap = await self.browser.snapshot()
                 atomic_json(self.trace.folder / "page.json", snap)
             except Exception as snapshot_error:
                 self.trace.event("snapshot_error", message=str(snapshot_error))
             message = f"[{self.stage}] {type(exc).__name__}: {message}；日志：{self.trace.folder}"
-        if re.search(r"登录|验证码|安全验证", message):
-            self.requires_user = True
-        if getattr(exc, 'code', '') in {'agreement', 'account_mismatch', 'permission_denied'}:
-            self.requires_user = True
+        from ..page_state import needs_user_action
+        self.requires_user = self.requires_user or needs_user_action(exc)
         if getattr(exc, 'code', None):
             await self.checkpoint(errorCode=exc.code)
         record = self.record

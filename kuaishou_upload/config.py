@@ -28,7 +28,7 @@ class Settings:
     max_steps: int = 80
     # 直接构造 Settings 时可关闭资料生成，便于独立测试；命令入口默认启用。
     config: Path | None = None
-    max_jobs: int = 1
+    max_jobs: int = 0
     request_timeout: float = 30
     upload_timeout: float = 600
     platform: str = 'kuaishou'
@@ -37,6 +37,7 @@ class Settings:
     use_vision: bool = False
     recovery_steps: int = 2
     browser_backend: str = 'stagehand'
+    upload_mode: str = 'folder'
 
     @property
     def runtime_root(self):
@@ -54,7 +55,7 @@ class Settings:
             headless=flag("UPLOAD_HEADLESS"), stable_seconds=float(os.getenv("UPLOAD_STABLE_SECONDS", "30")),
             max_steps=int(os.getenv("UPLOAD_MAX_STEPS", "80")),
             config=Path(os.getenv("UPLOAD_CONFIG", str(PROJECT / "upload_config.json"))).expanduser().resolve(),
-            max_jobs=int(os.getenv("UPLOAD_MAX_JOBS", "1")),
+            max_jobs=int(os.getenv("UPLOAD_MAX_JOBS", "0")),
             request_timeout=float(os.getenv("UPLOAD_REQUEST_TIMEOUT", "30")),
             upload_timeout=float(os.getenv("UPLOAD_TIMEOUT", "600")),
             platform=os.getenv('UPLOAD_PLATFORM', 'kuaishou').strip(),
@@ -62,9 +63,12 @@ class Settings:
             expected_account=os.getenv('UPLOAD_EXPECTED_ACCOUNT', '').strip(),
             use_vision=flag('UPLOAD_USE_VISION'),
             recovery_steps=int(os.getenv('UPLOAD_RECOVERY_STEPS', '2')),
-            browser_backend=os.getenv('UPLOAD_BROWSER_BACKEND', 'stagehand').strip())
-        if settings.browser_backend not in {'stagehand', 'browser_use'}:
-            raise ValueError('UPLOAD_BROWSER_BACKEND必须为stagehand或browser_use')
+            browser_backend=os.getenv('UPLOAD_BROWSER_BACKEND', 'stagehand').strip(),
+            upload_mode=os.getenv('UPLOAD_MODE', 'folder').strip())
+        if settings.upload_mode not in {'folder', 'sequential'}:
+            raise ValueError('UPLOAD_MODE必须为folder或sequential')
+        if settings.browser_backend not in {'midscene', 'stagehand', 'browser_use'}:
+            raise ValueError('UPLOAD_BROWSER_BACKEND必须为midscene、stagehand或browser_use')
         from .platforms import get_adapter
         get_adapter(settings.platform)  # unsupported platforms stop before scanning/writing
         if not settings.account_id or not 0 <= settings.recovery_steps <= 3:

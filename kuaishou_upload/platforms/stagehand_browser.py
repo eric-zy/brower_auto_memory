@@ -14,22 +14,32 @@ class StagehandPlatformBrowser(PlatformBrowser):
         self.rpc = None
         self.owner_browser = None
 
+    def create_transport(self):
+        return StagehandTransport(self.root)
+
+    def worker_cache_file(self):
+        return self.root / 'stagehand-locators.json'
+
     async def open(self):
         # Browser Use only owns Chrome lifecycle/profile; Stagehand owns page/frame execution.
         await super().open()
         self.owner_browser = self.browser
-        self.rpc = StagehandTransport(self.root)
+        self.rpc = self.create_transport()
         try:
             await self.rpc.start()
             result = await self.rpc.call('init', cdpUrl=self.owner_browser.cdp_url, targetId=self.page._target_id,
                 allowedHosts=sorted(self.allowed_hosts), snapshotScript=SNAPSHOT,
                 expectedAccount=self.expected_account,
-                files={k:str(v) for k,v in self.job.files.items()}, cacheFile=str(self.root/'stagehand-locators.json'))
+                files={k:str(v) for k,v in self.job.files.items()}, cacheFile=str(self.worker_cache_file()),
+                **({'batchFiles': self.batch_specs} if getattr(self, 'batch_specs', None) else {}))
             self.browser = StagehandSession(self.rpc, self.job.files)
             self.page = StagehandPage(self.rpc, result['pageId'], self.job.files)
         except BaseException:
             await self.rpc.terminate()
-            await self.owner_browser.kill()
+            if self.session_pool:
+                self.session_pool.failed = True
+            else:
+                await super().close()
             raise
 
     async def open_upload_entry(self):
@@ -49,7 +59,8 @@ class StagehandPlatformBrowser(PlatformBrowser):
                 binding = await self.rpc.call('field_binding', pageId=self.page._target_id, name=name,
                     value=self.fields[name], selected=name in self.pending_choices)
                 if binding:
-                    await context.fill_form(FormParams(job_id=context.job_id, fields=[FieldBinding(**binding)]))
+                    await context.fill_form(FormParams(job_id=context.job_id, fields=[FieldBinding(**binding)],
+                        read_only=context.existing_series and name not in {'集数标题', '单集付费', '单集价格'}))
                     changed = True
                     break
             if not changed:
@@ -91,7 +102,11 @@ class StagehandPlatformBrowser(PlatformBrowser):
             if self.rpc:
                 await self.rpc.close()
         finally:
-            if self.owner_browser:
-                await self.owner_browser.kill()
-            elif self.browser:
+            if self.owner_browser and self.session_pool is None:
+                from ..browser_process import close_owned_processes
+                try:
+                    await self.owner_browser.kill()
+                finally:
+                    await close_owned_processes(self._owned_processes)
+            elif not self.owner_browser and self.browser:
                 await super().close()

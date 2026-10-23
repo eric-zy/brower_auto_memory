@@ -10,6 +10,10 @@ from .page_state import PageBlocked
 
 
 class StagehandTransport:
+    engine_name = 'Stagehand'
+    worker_folder = 'stagehand'
+    dependency_package = '@browserbasehq/stagehand'
+
     def __init__(self, root: Path, *, timeout=120):
         self.root, self.timeout = root, timeout
         self.process = None
@@ -21,9 +25,9 @@ class StagehandTransport:
 
     async def start(self):
         node = shutil.which('node')
-        folder = Path(__file__).resolve().parents[1] / 'stagehand'
-        if not node or not (folder / 'node_modules/@browserbasehq/stagehand/package.json').exists():
-            raise RuntimeError('Stagehand依赖未安装：请在stagehand目录执行 npm ci --ignore-scripts')
+        folder = Path(__file__).resolve().parents[1] / self.worker_folder
+        if not node or not (folder / 'node_modules' / self.dependency_package / 'package.json').exists():
+            raise RuntimeError(f'{self.engine_name}依赖未安装：请在{self.worker_folder}目录执行 npm ci --ignore-scripts')
         self.process = await asyncio.create_subprocess_exec(node, str(folder / 'worker.mjs'), cwd=folder,
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             limit=16*1024*1024, creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
@@ -32,26 +36,26 @@ class StagehandTransport:
     async def _read_stderr(self):
         async for raw in self.process.stderr:
             text = raw.decode('utf-8', errors='replace').strip()
-            for secret in (os.getenv('OPENAI_API_KEY'), os.getenv('STAGEHAND_API_KEY')):
+            for secret in (os.getenv('OPENAI_API_KEY'), os.getenv('STAGEHAND_API_KEY'), os.getenv('MIDSCENE_MODEL_API_KEY')):
                 if secret:
                     text = text.replace(secret, '[redacted]')
             self.stderr_tail = (self.stderr_tail + [text])[-30:]
 
     async def call(self, method, **params):
         if self.failed:
-            raise RuntimeError('Stagehand进程结果不明，禁止自动重试页面动作')
+            raise RuntimeError(f'{self.engine_name}进程结果不明，禁止自动重试页面动作')
         async with self.lock:
             self.counter += 1
             request = {'id': self.counter, 'method': method, 'params': params}
             try:
                 self.process.stdin.write((json.dumps(request, ensure_ascii=False)+'\n').encode('utf-8'))
                 await self.process.stdin.drain()
-                line = await asyncio.wait_for(self.process.stdout.readline(), self.timeout)
+                line = await self.read_response(method)
                 if not line:
-                    raise RuntimeError('Stagehand进程提前退出：'+'；'.join(self.stderr_tail[-3:]))
+                    raise RuntimeError(f'{self.engine_name}进程提前退出：'+'；'.join(self.stderr_tail[-3:]))
                 response = json.loads(line)
                 if response.get('id') != self.counter:
-                    raise RuntimeError('Stagehand返回请求身份不匹配')
+                    raise RuntimeError(f'{self.engine_name}返回请求身份不匹配')
             except BaseException:
                 self.failed = True
                 await self.terminate()
@@ -61,12 +65,26 @@ class StagehandTransport:
                 raise PageBlocked(error['code'], error['message'])
             return response.get('result')
 
+    async def read_response(self, method):
+        return await asyncio.wait_for(self.process.stdout.readline(), self.timeout)
+
     async def terminate(self):
         if self.process and self.process.returncode is None:
             self.process.kill()
             await self.process.wait()
         if self.stderr_task:
             self.stderr_task.cancel()
+            await asyncio.gather(self.stderr_task, return_exceptions=True)
+        if self.process and getattr(self.process, 'stdin', None):
+            close = getattr(self.process.stdin, 'close', None)
+            if close:
+                close()
+                wait_closed = getattr(self.process.stdin, 'wait_closed', None)
+                if wait_closed:
+                    try:
+                        await wait_closed()
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
 
     async def close(self):
         try:

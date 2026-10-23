@@ -42,11 +42,16 @@ class ScanResult:
     items: list[dict] = field(default_factory=list)
     jobs: dict = field(default_factory=dict)
     config_path: str | None = None
+    platform: str = 'kuaishou'
 
     def summary(self):
         return {"counts": dict(Counter(item["status"] for item in self.items)), "files": self.items,
                 "config": self.config_path, "generated": sum(bool(item.get("generated")) for item in self.items),
-                "test_jobs": sum(job.manifest.testMode for job in self.jobs.values())}
+                "test_jobs": sum(job.manifest.testMode for job in self.jobs.values()),
+                'series': [{'key': group['key'], 'title': group['title'],
+                            'episodes': [job.manifest.episodes[0].number for _, job in group['jobs']],
+                            'files': [str(job.files['video']) for _, job in group['jobs']]}
+                           for group in self.grouped_jobs()]}
 
     def checklist(self, directory):
         summary = self.summary()
@@ -68,7 +73,17 @@ class ScanResult:
         return "\n".join(lines)
 
     def ordered_jobs(self):
-        return sorted(self.jobs.items(), key=lambda pair: (pair[1].manifest.seriesTitle.casefold(), pair[1].manifest.episodes[0].number))
+        return [pair for group in self.grouped_jobs() for pair in group['jobs']]
+
+    def grouped_jobs(self):
+        adapter = get_adapter(self.platform)
+        groups = {}
+        for sha, job in self.jobs.items():
+            key = adapter.series_key(job)
+            groups.setdefault(key, {'key': key, 'title': job.manifest.seriesTitle, 'jobs': []})['jobs'].append((sha, job))
+        for group in groups.values():
+            group['jobs'].sort(key=lambda pair: pair[1].manifest.episodes[0].number)
+        return sorted(groups.values(), key=lambda group: (group['title'].casefold(), group['key']))
 
 
 def series_key(job):
@@ -84,6 +99,7 @@ def scan_directory(settings, database, *, clock=time.time):
     names = Counter(video.name.casefold() for video in videos)
     legacy = Ledger(settings.ledger).read()
     report, seen = ScanResult(), set()
+    report.platform = settings.platform
     builder = None
     if settings.config:
         builder = adapter.metadata_builder(settings, videos)

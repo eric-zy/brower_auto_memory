@@ -16,6 +16,7 @@ from ..locator import safe_candidate, signature
 
 from ..schema import file_hash
 from ..config import PLATFORM_URL
+from .kuaishou_lookup import lookup_evidence
 
 PLATFORM = "https://kdj.kuaishou.com"
 FINAL_LABELS = {"提交", "发布", "提交审核", "确认发布", "确认提交"}
@@ -113,6 +114,8 @@ class PlatformBrowser(BrowserRuntime):
         self.phase_name = ""
         self.pending_choices = {}
         self.attempts = {}
+        self.failure_snapshot = None
+        self._owned_processes = []
 
     async def open(self):
         os.environ.setdefault("BROWSER_USE_CONFIG_DIR", str(self.root / "browser-config"))
@@ -120,18 +123,45 @@ class PlatformBrowser(BrowserRuntime):
         os.environ.setdefault("TIMEOUT_BrowserLaunchEvent", "90")
         from browser_use import Browser
 
-        self.browser = Browser(user_data_dir=self.root / "browser-profile", headless=self.headless,
-                               enable_default_extensions=False, captcha_solver=False, keep_alive=True)
-        await self.browser.start()
-        self.page = await self.browser.get_current_page()
-        if self.page is None:
-            self.page = await self.browser.new_page()
-        await self.page.goto(PLATFORM_URL)
-        await self.wait_page()
+        pool = self.session_pool
+        if pool and (pool.root != self.root.resolve() or pool.expected_account != self.expected_account or pool.failed):
+            raise RuntimeError('共享浏览器身份不一致或连接已失效，停止批次')
+        try:
+            if pool and pool.browser:
+                self.browser, self.page = pool.browser, pool.page
+                if self.page is None:
+                    raise RuntimeError('共享浏览器没有已验证的任务标签页')
+                print('[浏览器] 复用当前会话和标签页', flush=True)
+                await self.emit('browser_session_reused', targetId=self.page._target_id)
+            else:
+                self.browser = Browser(user_data_dir=self.root / "browser-profile", headless=self.headless,
+                                       enable_default_extensions=False, captcha_solver=False, keep_alive=True)
+                if pool:
+                    pool.browser = self.browser
+                if pool:
+                    await pool.start_browser(self.browser)
+                else:
+                    from ..browser_process import start_owned_browser
+                    await start_owned_browser(self.browser, self._owned_processes)
+                self.page = await self.browser.get_current_page()
+                if self.page is None:
+                    self.page = await self.browser.new_page()
+                if pool:
+                    pool.page = self.page
+            await self.page.goto(PLATFORM_URL)
+            await self.wait_page()
+        except BaseException:
+            if pool:
+                pool.failed = True
+            raise
 
     async def close(self):
-        if self.browser:
-            await self.browser.kill()
+        if self.browser and self.session_pool is None:
+            from ..browser_process import close_owned_processes
+            try:
+                await self.browser.kill()
+            finally:
+                await close_owned_processes(self._owned_processes)
 
     async def wait_page(self):
         for _ in range(30):
@@ -194,16 +224,18 @@ class PlatformBrowser(BrowserRuntime):
                                + f"截断={snap.get('truncated', False)}；iframe={snap.get('frameCount', 0)}；页面={excerpt}")
 
     async def lookup_series(self):
-        """在独立列表页查重，不修改已打开上传表单。"""
-        main_page = self.page
+        """在当前列表标签页查重；业务层据结果决定进入详情或上传表单。"""
         filled = dict(self.filled)
-        lookup = await self.browser.new_page(PLATFORM_URL)
-        self.page = lookup
+        snap = None
+        evidence = None
+        self.failure_snapshot = None
         try:
             await self.wait_page()
             await self.dismiss_onboarding()
             for _ in range(30):
                 snap = await self.snapshot()
+                if urlsplit(snap['url']).path.rstrip('/') != urlsplit(PLATFORM_URL).path:
+                    raise ValueError('平台查重只允许在当前内容管理列表进行，不能填写详情或上传表单')
                 field = await self.resolve_intent(snap, 'search_field', recover=_ >= 4)
                 button = await self.resolve_intent(snap, 'search', recover=_ >= 4)
                 inputs, buttons = ([field] if field else []), ([button] if button else [])
@@ -220,32 +252,29 @@ class PlatformBrowser(BrowserRuntime):
             for _ in range(30):
                 await asyncio.sleep(0.5)
                 snap = await self.snapshot()
-                matches = []
-                for row in snap["rows"]:
-                    for cell in row.get("cells", []):
-                        title = re.split(r"(?:短剧|作品)\s*ID", cell, maxsplit=1)[0]
-                        if re.sub(r"\s+", "", title) == re.sub(r"\s+", "", self.fields["剧名"]):
-                            ids = {content_id(link) for link in row.get("links", []) if content_id(link)}
-                            found = re.search(r"(?:短剧|作品)\s*ID\s*[:：]?\s*([A-Za-z0-9_-]+)", row["text"])
-                            if found:
-                                ids.add(found.group(1))
-                            matches.extend(ids)
-                ids = sorted(set(matches))
-                empty = bool(re.search(r"暂无数据|暂无内容|无搜索结果|没有找到|暂无短剧", snap["text"])) and not any(
-                    re.search(r"(?:短剧|作品)\s*ID", row["text"]) for row in snap["rows"])
-                evidence = (tuple(ids), empty)
-                if evidence == previous and (ids or empty):
+                evidence = lookup_evidence(snap, self.fields["剧名"], search_ref=inputs[0]['ref'])
+                ids, empty = evidence['ids'], evidence['empty']
+                stable = (tuple(ids), empty)
+                if stable == previous and (ids or empty):
                     if len(ids) > 1:
                         raise ValueError("平台存在多个同名作品，请先核对目标 ID")
                     await self.confirm_intents(snap)
+                    await self.emit('lookup_verified', title=self.fields['剧名'], contentId=ids[0] if ids else None,
+                                    queryVerified=evidence['queryVerified'], candidates=evidence['candidates'])
                     return ids[0] if ids else None
-                previous = evidence
-            raise TimeoutError("搜索后无法取得匹配作品或明确无结果的证据")
+                previous = stable
+            raise TimeoutError("搜索后无法取得匹配作品或明确无结果的证据；"
+                               + f"查询已核实={bool(evidence and evidence['queryVerified'])}；"
+                               + f"作品行数={len(evidence['candidates']) if evidence else 0}")
+        except Exception:
+            # Preserve the list evidence without navigating away on failure.
+            self.failure_snapshot = snap
+            await self.emit('lookup_failed', title=self.fields['剧名'], url=snap.get('url') if snap else None,
+                            evidence=evidence)
+            raise
         finally:
-            self.page = main_page
+            # The search field must never count as a completed metadata field.
             self.filled = filled
-            await self.browser.close_page(lookup)
-            await self.browser.get_or_create_cdp_session(main_page._target_id, focus=True)
 
     async def snapshot(self, *, allow_login=False):
         url = await self.page.get_url()
@@ -309,6 +338,8 @@ class PlatformBrowser(BrowserRuntime):
         if not required.issubset(self.filled):
             raise ValueError("必填字段未完成: " + "、".join(sorted(required - self.filled.keys())))
         current = json.loads(await self.page.evaluate(SNAPSHOT))
+        if not getattr(self, 'batch_hashes', None) and self.expected_card_count == 1 and self.job.manifest.episodes[0].number != 1:
+            raise ValueError('已进入新建表单；非首集需要文件夹批次核实真实平台集号，不能作为第1集导入')
         episode_inputs = [node for node in current["controls"] if node["tag"] == "input" and node["type"] == "text"
                           and re.search(r"集数标题|单集标题|剧集标题|单集名称", node["label"] + " " + node.get("context", ""))]
         matching = [n for n in episode_inputs if n["value"] == self.job.manifest.episodes[0].title]
@@ -394,6 +425,10 @@ class PlatformBrowser(BrowserRuntime):
             if current.get('href'):
                 from urllib.parse import urljoin
                 self.validate_url(urljoin(snap['url'], current['href']))
+        if node.get('semanticClickable'):
+            actionable = await self.page.evaluate("""(ref) => {const e=document.querySelector('[data-ks-upload-ref="'+ref+'"]');return !!e&&e.matches('div,span')&&!e.closest('button,a,li,label,[role=button],[role=menuitem],[role=radio],[role=checkbox],[role=option],[aria-disabled=true]')&&!!(e.onclick||getComputedStyle(e).cursor==='pointer')}""", node['ref'])
+            if actionable not in ('True','true'):
+                raise RuntimeError('控件点击属性已变化，请重新观察')
         if re.search(r"服务协议|用户协议|免责声明|我已阅读", " ".join(str(node.get(k, "")) for k in ("text", "label", "context"))):
             raise ValueError("遇到协议确认控件，需要用户自行处理")
         attempt = (phase, snap.get("url", ""), decision.action, decision.ref, decision.field)
@@ -478,10 +513,15 @@ class PlatformBrowser(BrowserRuntime):
             raise ValueError("不支持的动作")
 
     @staticmethod
+    def upload_rows_for(snap, filename):
+        pattern = re.compile(r'(?<![\w.-])' + re.escape(filename) + r'(?![\w.-])', re.I)
+        return [row for row in snap.get('uploadRows', []) if pattern.search(row['text'])]
+
+    @staticmethod
     def video_complete(snap, filename):
         # 只认可包含该视频文件名的上传行，不能把其他文件的 100% 或网站 Logo 当作证据。
-        return any(filename in row["text"] and re.search(r"100\s*%|上传成功|上传完成", row["text"])
-                   and row["previews"] > 0 for row in snap.get("uploadRows", []))
+        return any(re.search(r"100\s*%|上传成功|上传完成", row["text"])
+                   and row["previews"] > 0 for row in PlatformBrowser.upload_rows_for(snap, filename))
 
     async def verify_prepared(self, state):
         url = state.get("draftUrl") or state.get("currentUrl", "")

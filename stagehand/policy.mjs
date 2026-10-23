@@ -13,7 +13,9 @@ export function safeClick(n,{final=false, navigation=false}={}) {
   const context=[n.label,n.context].join(' ');
   if(RISK.test(text)||/服务协议|用户协议|免责声明|我已阅读|授权确认/.test(context)) return false;
   if(navigation && /radio|checkbox|option/.test(n.type)) return false;
+  if(navigation && n.semanticClickable && /^(免费|付费|是|否)$/.test((n.text||'').trim())) return false;
   return ['button','a','li'].includes(n.tag)||['button','menuitem'].includes(n.type)
+    ||(n.semanticClickable===true && ['div','span'].includes(n.tag))
     ||(!navigation && (['radio','checkbox','option','combobox'].includes(n.type)||['input','select','textarea'].includes(n.tag)) && !['password','file'].includes(n.type));
 }
 export function stateOf(s) {

@@ -8,3 +8,5 @@ __pycache__/
 upload_config.json
 # 忽略所有 node_modules 目录
 node_modules/
+midscene/test-runs/
+midscene_run/

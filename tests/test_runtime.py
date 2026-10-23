@@ -95,24 +95,51 @@ class RuntimeTests(unittest.TestCase):
         context = UploadTask(job, sha, self.settings, self.db, {}, browser=browser)
         return context, browser, events
 
-    def test_entry_click_precedes_readonly_lookup_and_needs_no_model(self):
+    def test_verified_absence_precedes_upload_entry_and_needs_no_model(self):
         context, browser, events = self.context()
         context.auto_prepare = AsyncMock()
         asyncio.run(context.bootstrap())
-        self.assertEqual(events, ["entry", "lookup"])
+        self.assertEqual(events, ["lookup", "entry"])
         self.assertTrue(context.checked)
         self.assertTrue(context.bootstrapped)
         context.auto_prepare.assert_awaited_once()
 
-    def test_no_existing_series_does_not_create_from_episode_two(self):
+    def test_verified_absence_opens_new_form_even_for_episode_two(self):
         data = json.loads(self.source.read_text(encoding="utf-8"))
         data["episodes"][0].update(number=2, title="第2集")
         self.source.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         context, browser, events = self.context()
-        with self.assertRaisesRegex(ValueError, "非第1集"):
+        context.auto_prepare = AsyncMock()
+        asyncio.run(context.bootstrap())
+        self.assertEqual(events, ["lookup", "entry"])
+        browser.open_upload_entry.assert_awaited_once()
+        self.assertTrue(context.checked)
+
+    def test_existing_episode_is_inspected_without_opening_upload_form(self):
+        context, browser, events = self.context()
+        async def lookup():
+            events.append('lookup')
+            return 'C1'
+        async def detail(cid):
+            events.append('detail')
+        async def inspect(params):
+            self.db.update(context.sha256, status='exists')
+        browser.lookup_series = AsyncMock(side_effect=lookup)
+        browser.open_detail = AsyncMock(side_effect=detail)
+        context.inspect_platform = AsyncMock(side_effect=inspect)
+        context.auto_prepare = AsyncMock()
+        asyncio.run(context.bootstrap())
+        self.assertEqual(events, ['lookup', 'detail'])
+        browser.open_upload_entry.assert_not_awaited()
+        context.auto_prepare.assert_not_awaited()
+
+    def test_uncertain_lookup_never_opens_upload_form(self):
+        context, browser, events = self.context()
+        browser.lookup_series = AsyncMock(side_effect=TimeoutError('没有明确查重证据'))
+        with self.assertRaises(TimeoutError):
             asyncio.run(context.bootstrap())
-        self.assertEqual(events, ["entry", "lookup"])
-        browser.act.assert_not_called()
+        browser.open_upload_entry.assert_not_awaited()
+        self.assertFalse(context.checked)
 
     def test_provider_failure_stops_batch_and_preserves_remaining_queue(self):
         import main

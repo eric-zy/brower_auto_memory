@@ -1,5 +1,7 @@
 # 快手视频上传工具
 
+> **开发接续入口（2026-10-23）**：先读 [自主学习上传实施路线](E:/workSpace/brower-agent-test/docs/autonomous-upload-roadmap.md)。用户要求自主探索页面、完成任务并自动生成工具，下一步是 Skyvern 隔离原型验证，尚未接入正式流程。本文部分段落保留早期实现说明；当前后端、模型和批次行为以实际代码、配置及对应运行文档为准。新增平台继续手写页面适配器不是下一阶段建设目标。
+
 运行一次，递归扫描 `E:\upload_test\` 的 MP4，串行处理未上传的视频。读取已有 `发布记录.xlsx`，以视频 SHA256 保存上传状态；同一个视频改名或移动后仍会跳过。
 
 已激活 `.venv` 时，在项目目录运行：
@@ -14,7 +16,21 @@ python main.py
 
 首次会打开项目独立浏览器，请手动登录快手，回到终端按 Enter 继续。每次命令只处理一轮，新增视频后再次运行即可。遇到验证码需要人工处理。
 
-当前默认每轮只联调 1 集，优先第 1 集或已有作品。程序先关闭已知引导并点击右上角“内容上传”，在独立列表页查重，再按标签填写常规字段、选择附件。模型只处理无法自动定位的特殊控件，视频进度由程序轮询。调通后在 `.env` 设置 `UPLOAD_MAX_JOBS=0` 恢复批量。
+默认按剧分组、按集号连续处理全部待处理视频（UPLOAD_MAX_JOBS=0）。整个批次复用一个Chrome和同一任务标签页，每集仍有独立的文件白名单、状态和去重记录。已有集数自动跳过并继续下一集；登录、协议、模型服务或浏览器连接异常会停止批次。需要限制调试数量时设置UPLOAD_MAX_JOBS=1或使用--max-jobs。
+
+仅检测一部剧的文件夹并预览：
+
+```powershell
+python main.py --directory "E:\upload_test\剧集目录" --dry-run
+```
+
+复用浏览器逐集连续处理该目录：
+
+```powershell
+python main.py --directory "E:\upload_test\剧集目录" --max-jobs 0
+```
+
+指定目录只改变扫描范围，仍使用原配置的数据库和台账去重。每次先在当前列表页查重：已有作品进入详情核对；明确无同名作品且为第1集，才点击“内容上传”。当前testMode=true时，连续执行模拟准备，在每集最终提交前停止；不会自动切换正式模式。
 
 模型单次请求上限默认 30 秒；参数 JSON 无效时最多重新生成一次，失败后停止本轮队列，后续视频保留待处理。具体阶段、耗时、异常、坏 JSON 原文和页面快照保存在 `.kuaishou-upload/logs/<任务ID>/`，API 密钥会从诊断信息中隐藏。
 
@@ -48,5 +64,7 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 多平台架构、账号隔离、语义定位恢复及数据库迁移见 [多平台运行说明](docs/multiplatform-architecture.md)。目前真实业务适配器仍为快手；新增平台只扩展适配器，通用业务工具不重复增加。
 
 
-默认浏览器后端现为B方案Stagehand，安装与边界见 [Stagehand运行说明](docs/stagehand-backend.md)。首次需在stagehand目录执行 npm ci --ignore-scripts。
+当前项目可切换 Midscene、Stagehand 和 Browser Use。Midscene 的接入、缓存和回退说明见 [Midscene运行说明](docs/midscene-backend.md)。原有 [Stagehand运行说明](docs/stagehand-backend.md) 和两个旧后端均保留。
+
+当前 `.env` 使用 `UPLOAD_BROWSER_BACKEND=midscene`，`UPLOAD_HEADLESS=false` 时可观察页面操作；运行入口仍为 `python main.py`。临时回退可用 `python main.py --backend stagehand` 或 `python main.py --backend browser_use`，不改变台账和上传状态。未配置后端的旧环境继续默认 Stagehand。
 

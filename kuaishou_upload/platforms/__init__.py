@@ -14,6 +14,7 @@ class AdapterSpec:
     builder_class: str
     series_identity: str
     stagehand_browser_class: str | None = None
+    midscene_browser_class: str | None = None
 
     @staticmethod
     def load(target):
@@ -26,6 +27,10 @@ class AdapterSpec:
             if not self.stagehand_browser_class:
                 raise ValueError(f'平台{self.name}尚未配置Stagehand执行器')
             target = self.stagehand_browser_class
+        elif settings.browser_backend == 'midscene':
+            if not self.midscene_browser_class:
+                raise ValueError(f'平台{self.name}尚未配置Midscene执行器')
+            target = self.midscene_browser_class
         return self.load(target)(job, settings.runtime_root, headless=settings.headless,
                                              expected_account=settings.expected_account,
                                              recovery_steps=settings.recovery_steps)
@@ -50,7 +55,8 @@ _ADAPTERS = {
         'skills/kuaishou-minidrama-upload/SKILL.md', '.kuaishou.json',
         'kuaishou_upload.schema:load_job', 'kuaishou_upload.prepare:ManifestBuilder',
         'kuaishou_upload.platforms.kuaishou_metadata:series_key',
-        stagehand_browser_class='kuaishou_upload.platforms.stagehand_browser:StagehandPlatformBrowser')
+        stagehand_browser_class='kuaishou_upload.platforms.stagehand_browser:StagehandPlatformBrowser',
+        midscene_browser_class='kuaishou_upload.platforms.midscene_browser:MidscenePlatformBrowser')
 }
 
 

@@ -107,10 +107,12 @@ export class UploadEngine {
       const r=e.getBoundingClientRect(),s=getComputedStyle(e);
       const ids=(e.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean);
       const accessibleName=(e.getAttribute('aria-label')||ids.map(id=>document.getElementById(id)?.innerText||'').join(' ')||e.labels?.[0]?.innerText||e.innerText||e.title||e.getAttribute('alt')||'').trim().slice(0,160);
-      return {tag:e.tagName.toLowerCase(),type:e.type||e.getAttribute('role')||'',text:(e.innerText||e.getAttribute('aria-label')||'').trim().slice(0,100),accessibleName,disabled:!!e.disabled,href:e.getAttribute('href')||'',visible:r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'};
+      const semanticClickable=e.matches('div,span')&&!e.closest('button,a,li,label,[role=button],[role=menuitem],[role=radio],[role=checkbox],[role=option],[aria-disabled=true]')&&!!(e.onclick||s.cursor==='pointer')&&(e.innerText||'').trim().length>0&&(e.innerText||'').trim().length<=100;
+      return {tag:e.tagName.toLowerCase(),type:e.type||e.getAttribute('role')||'',text:(e.innerText||e.getAttribute('aria-label')||'').trim().slice(0,100),accessibleName,semanticClickable,disabled:!!e.disabled,href:e.getAttribute('href')||'',visible:r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'};
     },ref);
     if(!current||['tag','type','text','href','accessibleName'].some(k=>(current[k]||'')!==(b.node[k]||''))) throw new Error('控件已变化，请重新观察');
     if(current.disabled) throw new Error('控件已被禁用');
+    if(b.node.semanticClickable&&!current.semanticClickable) throw new Error('控件点击属性已变化');
     return {...b,current,locator:b.frame.locator(`[data-ks-upload-ref="${ref}"]`)};
   }
   async click(id,ref,{final=false,navigation=false}={}) {

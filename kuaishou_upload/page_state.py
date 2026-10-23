@@ -15,6 +15,20 @@ class PageBlocked(RuntimeError):
         super().__init__(message)
 
 
+def is_login_challenge(exc):
+    code = getattr(exc, 'code', '')
+    if code:
+        return code in {'login', 'login_required', 'challenge'}
+    # Legacy browsers may raise a plain RuntimeError. Never classify business
+    # ValueErrors, stage labels, trace URLs or metadata as a login challenge.
+    return isinstance(exc, RuntimeError) and bool(re.search(
+        r'扫码登录|等待.*登录|请.*完成登录|尚未登录|未登录|登录已失效|登录过期|验证码|安全验证', str(exc)))
+
+
+def needs_user_action(exc):
+    return is_login_challenge(exc) or getattr(exc, 'code', '') in {'agreement', 'account_mismatch', 'permission_denied'}
+
+
 def classify_page(snap):
     text = snap.get('text', '')
     controls = snap.get('controls', [])

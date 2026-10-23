@@ -20,7 +20,7 @@ def safe_candidate(node, intent):
         return False
     if intent == 'search_field':
         return node.get('tag') == 'input' and node.get('type') in {'text', 'search'} and not node.get('readOnly')
-    return node.get('tag') in {'button', 'a', 'li'} or node.get('type') in {'button', 'menuitem'}
+    return node.get('tag') in {'button', 'a', 'li'} or node.get('type') in {'button', 'menuitem'} or bool(node.get('semanticClickable'))
 
 
 class LocatorMemory:

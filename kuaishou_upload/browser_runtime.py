@@ -10,6 +10,36 @@ from .locator import LocatorMemory, SemanticLocator, safe_candidate, signature
 from .page_state import PageBlocked, classify_page
 
 
+class BrowserSessionPool:
+    """One account-scoped Chrome and task tab; per-file executors remain isolated."""
+    def __init__(self, root, *, expected_account=''):
+        self.root = Path(root).resolve()
+        self.expected_account = expected_account
+        self.browser = self.page = None
+        self.failed = False
+        self.owned_processes = []
+
+    async def start_browser(self, browser):
+        from .browser_process import start_owned_browser
+        await start_owned_browser(browser, self.owned_processes)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        await self.close()
+
+    async def close(self):
+        browser, self.browser = self.browser, None
+        self.page = None
+        from .browser_process import close_owned_processes
+        try:
+            if browser:
+                await browser.kill()
+        finally:
+            await close_owned_processes(self.owned_processes)
+
+
 class BrowserRuntime:
     allowed_hosts = frozenset()
     intents = {}
@@ -25,6 +55,7 @@ class BrowserRuntime:
         self.pending_intents = []
         self.events = []
         self.event_sink = None
+        self.session_pool = None
         self.locator = SemanticLocator(LocatorMemory(root / 'locator-memory.json'))
 
     async def emit(self, kind, **payload):
