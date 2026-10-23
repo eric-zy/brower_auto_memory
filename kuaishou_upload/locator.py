@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .state import atomic_json
 
-HAZARD = re.compile(r'提交|发布|删除|撤回|下架|同意|协议|免责声明|授权确认|支付|购买|编辑|解绑|绑定账号|退出登录|切换账号')
+HAZARD = re.compile(r'提交|发布|删除|撤回|下架|同意|免责声明|授权确认|支付|购买|编辑|解绑|绑定账号|退出登录|切换账号')
 
 
 def signature(node):
@@ -14,8 +14,9 @@ def signature(node):
 
 
 def safe_candidate(node, intent):
-    text = ' '.join(str(node.get(k, '')) for k in ('text', 'accessibleName', 'label', 'context'))
-    if node.get('disabled') or node.get('visible') is False or HAZARD.search(text):
+    text = ' '.join(str(node.get(k, '')) for k in ('text', 'accessibleName'))
+    context = ' '.join(str(node.get(k, '')) for k in ('label', 'context'))
+    if node.get('disabled') or node.get('visible') is False or HAZARD.search(text) or re.search(r'服务协议|用户协议|免责声明|我已阅读|授权确认', context):
         return False
     if intent == 'search_field':
         return node.get('tag') == 'input' and node.get('type') in {'text', 'search'} and not node.get('readOnly')

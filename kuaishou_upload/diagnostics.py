@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from uuid import uuid4
 from pathlib import Path
 
 from .state import atomic_json, now
@@ -38,7 +39,7 @@ class RunTrace:
                 details["jsonPosition"] = current.pos
             current = current.__cause__ or current.__context__
         if raw is not None:
-            filename = f"raw_arguments_{time.time_ns()}.txt"
+            filename = f"raw_arguments_{time.time_ns()}_{uuid4().hex}.txt"
             (self.folder / filename).write_text(self.redact(raw), encoding="utf-8")
             details["rawArguments"] = filename
             details["rawLength"] = len(raw)

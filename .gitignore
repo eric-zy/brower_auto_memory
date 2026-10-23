@@ -6,3 +6,5 @@ __pycache__/
 .browser-use/
 .kuaishou-upload/
 upload_config.json
+# 忽略所有 node_modules 目录
+node_modules/

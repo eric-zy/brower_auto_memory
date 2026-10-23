@@ -47,4 +47,6 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 多平台架构、账号隔离、语义定位恢复及数据库迁移见 [多平台运行说明](docs/multiplatform-architecture.md)。目前真实业务适配器仍为快手；新增平台只扩展适配器，通用业务工具不重复增加。
 
-# brower_auto_memory
+
+默认浏览器后端现为B方案Stagehand，安装与边界见 [Stagehand运行说明](docs/stagehand-backend.md)。首次需在stagehand目录执行 npm ci --ignore-scripts。
+

@@ -13,6 +13,7 @@ class AdapterSpec:
     manifest_loader: str
     builder_class: str
     series_identity: str
+    stagehand_browser_class: str | None = None
 
     @staticmethod
     def load(target):
@@ -20,7 +21,12 @@ class AdapterSpec:
         return getattr(import_module(module), name)
 
     def create_browser(self, job, settings):
-        return self.load(self.browser_class)(job, settings.runtime_root, headless=settings.headless,
+        target = self.browser_class
+        if settings.browser_backend == 'stagehand':
+            if not self.stagehand_browser_class:
+                raise ValueError(f'平台{self.name}尚未配置Stagehand执行器')
+            target = self.stagehand_browser_class
+        return self.load(target)(job, settings.runtime_root, headless=settings.headless,
                                              expected_account=settings.expected_account,
                                              recovery_steps=settings.recovery_steps)
 
@@ -43,7 +49,8 @@ _ADAPTERS = {
         'kuaishou_upload.platforms.kuaishou_workflow:KuaishouUploadTask',
         'skills/kuaishou-minidrama-upload/SKILL.md', '.kuaishou.json',
         'kuaishou_upload.schema:load_job', 'kuaishou_upload.prepare:ManifestBuilder',
-        'kuaishou_upload.platforms.kuaishou_metadata:series_key')
+        'kuaishou_upload.platforms.kuaishou_metadata:series_key',
+        stagehand_browser_class='kuaishou_upload.platforms.stagehand_browser:StagehandPlatformBrowser')
 }
 
 

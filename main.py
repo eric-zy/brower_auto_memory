@@ -87,6 +87,10 @@ async def process_queue(settings, database, report):
                 await context.start()
             await context.bootstrap()
             if context.record["status"] not in FINISHED and not context.reconcile_only and not context.awaiting_upload:
+                if getattr(context.browser, 'backend', '') == 'stagehand':
+                    await context.set_stage('Stagehand处理特殊控件')
+                    await context.browser.handle_special_controls(context)
+            if context.record["status"] not in FINISHED and not context.reconcile_only and not context.awaiting_upload and getattr(context.browser, 'backend', '') != 'stagehand':
                 await context.set_stage("模型处理特殊控件")
                 llm = get_model()
                 initial = await context.scan_directory(ScanParams())
@@ -143,6 +147,9 @@ async def process_queue(settings, database, report):
             print(f"[台账待同步] {message}；上传状态已保存，下次自动同步。", flush=True)
         if llm and llm.failed:
             print(f"模型生成已失败，停止本轮；后续任务不继续消耗调用。日志：{trace.folder}", flush=True)
+            break
+        if context.state.get('errorCode') in {'model_error', 'stagehand_model_error'}:
+            print('Stagehand模型服务失败，停止本轮队列，后续任务保留。', flush=True)
             break
         if context.requires_user:
             print("需要人工处理登录或验证码，本轮停止，后续视频保持待处理。", flush=True)

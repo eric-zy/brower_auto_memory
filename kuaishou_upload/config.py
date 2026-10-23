@@ -36,6 +36,7 @@ class Settings:
     expected_account: str = ''
     use_vision: bool = False
     recovery_steps: int = 2
+    browser_backend: str = 'stagehand'
 
     @property
     def runtime_root(self):
@@ -60,7 +61,10 @@ class Settings:
             account_id=os.getenv('UPLOAD_ACCOUNT_ID', 'default').strip(),
             expected_account=os.getenv('UPLOAD_EXPECTED_ACCOUNT', '').strip(),
             use_vision=flag('UPLOAD_USE_VISION'),
-            recovery_steps=int(os.getenv('UPLOAD_RECOVERY_STEPS', '2')))
+            recovery_steps=int(os.getenv('UPLOAD_RECOVERY_STEPS', '2')),
+            browser_backend=os.getenv('UPLOAD_BROWSER_BACKEND', 'stagehand').strip())
+        if settings.browser_backend not in {'stagehand', 'browser_use'}:
+            raise ValueError('UPLOAD_BROWSER_BACKEND必须为stagehand或browser_use')
         from .platforms import get_adapter
         get_adapter(settings.platform)  # unsupported platforms stop before scanning/writing
         if not settings.account_id or not 0 <= settings.recovery_steps <= 3:
